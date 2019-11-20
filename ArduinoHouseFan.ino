@@ -44,6 +44,21 @@
   #define TFT_DC         9
 #endif
 
+const int selectButton = 2;             //button select length of time
+const int fanButton = 3;                //button select which fans are on
+volatile int selection;                 //variable that holds time selection
+volatile int fanSelection = 0;
+int timeSelection[] = {8, 6, 4, 2, 1};  //the amount of time selected
+int timePos [] = {40, 60, 80, 100, 120};//the position of the filled in circle
+
+int ledState = HIGH;         // the current state of the output pin
+int buttonState;             // the current reading from the input pin
+int lastButtonState = HIGH;   // the previous reading from the input pin
+
+// the following variables are unsigned longs because the time, measured in
+// milliseconds, will quickly become a bigger number than can be stored in an int.
+unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
+unsigned long debounceDelay = 50;    // the debounce time; increase if the output flickers
 
 /*
 ST7735_BLACK      ST77XX_BLACK
@@ -77,6 +92,12 @@ Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 float p = 3.1415926;
 
 void setup(void) {
+  
+  pinMode(selectButton, INPUT_PULLUP);
+  pinMode(fanButton, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(selectButton), my_interrupt_handler, FALLING);
+  
+  
   Serial.begin(9600);
   Serial.print(F("Hello! ST77xx TFT Test"));
 
@@ -110,93 +131,136 @@ void setup(void) {
   delay(500);
 
   
-  // large block of text
-  tft.fillScreen(ST77XX_BLACK);
-  tft.setTextSize(2);
-  //testdrawtext("Some Text Here", ST77XX_WHITE);
-  int col1Xpos = 10;
-  int col2XPos = 70;
-  int timeStartPosy = 40;
-  int timeYOffset = 20;
-  int timeTextYOffset = 2;
+  // Setup UI
+  selection = 0;
+  DrawUI();
+  DrawFanStatus(fanSelection);
+  DrawTimeSelection();
   
-// DRAW FAN STATUS INDICATOR------------------------------------------------------------------------------
-  drawText("FAN 1", ST77XX_WHITE, col2XPos, 10);
-  drawText("OFF", ST77XX_RED, col2XPos, 30);
-  drawText("FAN 2", ST77XX_WHITE, col2XPos, 60);
-  drawText("ON", ST77XX_GREEN, col2XPos, 80);
-
-// DRAW TIME UI INDICATOR -------------------------------------------------------------------------------
-  //tft.drawCircle(x,y,r,color)
-  //tft.fillCircle(x, y, radius, color);
-  //tft.setTextSize(1);
-  drawText("Time", ST77XX_WHITE, col1Xpos - 5, 10);
-
-  tft.setTextSize(1);
-  tft.drawCircle(col1Xpos,timeStartPosy,5,ST77XX_WHITE);
-  drawText("8hrs", ST77XX_WHITE, col1Xpos + 10, timeStartPosy - timeTextYOffset);
-  
-  tft.drawCircle(col1Xpos,timeStartPosy + (timeYOffset),5,ST77XX_WHITE);
-  drawText("6hrs", ST77XX_WHITE, col1Xpos + 10, timeStartPosy + (timeYOffset) - timeTextYOffset);
-  
-  tft.drawCircle(col1Xpos,timeStartPosy + (timeYOffset * 2),5,ST77XX_WHITE);
-  tft.fillCircle(col1Xpos,timeStartPosy + (timeYOffset * 2),3,ST77XX_WHITE);
-  drawText("4hrs", ST77XX_WHITE, col1Xpos + 10, timeStartPosy + (timeYOffset * 2) - timeTextYOffset);
-  
-  tft.drawCircle(col1Xpos,timeStartPosy + (timeYOffset * 3),5,ST77XX_WHITE);
-  drawText("2hrs", ST77XX_WHITE, col1Xpos + 10, timeStartPosy + (timeYOffset * 3) - timeTextYOffset);
-
-  tft.drawCircle(col1Xpos,timeStartPosy + (timeYOffset * 4),5,ST77XX_WHITE);
-  drawText("1hrs", ST77XX_WHITE, col1Xpos + 10, timeStartPosy + (timeYOffset * 4) - timeTextYOffset);
-
-// DRAW START STOP INDICATOR------------------------------------------------------------------------------
-  tft.setTextSize(2);
-  drawText("START", ST77XX_GREEN, col2XPos - 5, 130);
-  
-/*
-  // tft print function!
-  tftPrintTest();
-  delay(4000);
-
-  // a single pixel
-  tft.drawPixel(tft.width()/2, tft.height()/2, ST77XX_GREEN);
-  delay(500);
-
-  // line draw test
-  testlines(ST77XX_YELLOW);
-  delay(500);
-
-  // optimized lines
-  testfastlines(ST77XX_RED, ST77XX_BLUE);
-  delay(500);
-
-  testdrawrects(ST77XX_GREEN);
-  delay(500);
-
-  testfillrects(ST77XX_YELLOW, ST77XX_MAGENTA);
-  delay(500);
-
-  tft.fillScreen(ST77XX_BLACK);
-  testfillcircles(10, ST77XX_BLUE);
-  testdrawcircles(10, ST77XX_WHITE);
-  delay(500);
-
-  testroundrects();
-  delay(500);
-
-  testtriangles();
-  delay(500);
-
-  mediabuttons();
-  delay(500);
-
-  Serial.println("done");
-  delay(1000);
-  */
 }
 
-void loop() {
+void loop() 
+{
+  int reading = digitalRead(fanButton);
+
+  DebounceButton(reading);
+}
+
+void DebounceButton(int bVal)
+{
+  if (bVal != lastButtonState) 
+  {
+    // reset the debouncing timer
+    lastDebounceTime = millis();
+  }
+
+  if ((millis() - lastDebounceTime) > debounceDelay) 
+  {
+    // whatever the reading is at, it's been there for longer than the debounce
+    // delay, so take it as the actual current state:
+
+    // if the button state has changed:
+    if (bVal != buttonState) 
+    {
+      buttonState = bVal;
+
+      // only toggle the LED if the new button state is HIGH
+      if (bVal == LOW) 
+      {
+        ChangeFanStatus();
+      }
+    }
+  }
+
+  // set the LED:
+  //Serial.println(ledState);
+
+  // save the reading. Next time through the loop, it'll be the lastButtonState:
+  lastButtonState = bVal;
+}
+
+void DrawUI()
+{
+  tft.fillScreen(ST77XX_BLACK);
+  //DRAW TEXT ELEMENTS--------------------------------------------
+  tft.setTextSize(2);
+  drawText("Time", ST77XX_WHITE, 5, 10);
+  drawText("FAN 1", ST77XX_WHITE, 70, 10);
+  drawText("FAN 2", ST77XX_WHITE, 70, 60);
+  drawText("START", ST77XX_GREEN, 65, 130);
   
+  //DRAW EMPTY CIRCLES--------------------------------------------
+  for(int i = 0; i < 5; i++)
+  {
+    //tft.drawCircle(X pos, Y pos, radius, color);
+    tft.drawCircle(10, timePos[i],5,ST77XX_WHITE);
+  }
+  //DRAW CIRCLE LABELS--------------------------------------------
+  tft.setTextSize(1);
+  drawText("8hrs", ST77XX_WHITE, 20, 38);
+  drawText("6hrs", ST77XX_WHITE, 20, 58);
+  drawText("4hrs", ST77XX_WHITE, 20, 78);
+  drawText("2hrs", ST77XX_WHITE, 20, 98);
+  drawText("1hrs", ST77XX_WHITE, 20, 118);
+}
+
+void ChangeFanStatus()
+{
+  fanSelection = (fanSelection + 1) % 4;
+  DrawFanStatus(fanSelection);
+}
+
+void DrawFanStatus(int setting)
+{
+  tft.fillRect(70, 30, 70, 20, ST77XX_BLACK);
+  tft.fillRect(70, 80, 70, 20, ST77XX_BLACK);
+  tft.setTextSize(2);
+  switch(setting)
+  {
+    case 1:
+      drawText("ON", ST77XX_GREEN, 70, 30);
+      drawText("OFF", ST77XX_RED, 70, 80);
+      break;
+    case 2:
+      drawText("OFF", ST77XX_RED, 70, 30);
+      drawText("ON", ST77XX_GREEN, 70, 80);
+      break;
+    case 3:
+      drawText("ON", ST77XX_GREEN, 70, 30);
+      drawText("ON", ST77XX_GREEN, 70, 80);
+      break;
+    default:
+      drawText("OFF", ST77XX_RED, 70, 30);
+      drawText("OFF", ST77XX_RED, 70, 80);
+      break;
+  }
+}
+
+void IncrementSelection()
+{
+  selection = (selection + 1) % 5;
+  DrawTimeSelection();
+}
+
+void DrawTimeSelection()
+{
+  for(int i = 0; i < 5; i++)
+  {
+    tft.fillCircle(10, timePos[i], 3, ST77XX_BLACK);
+  }
+  tft.fillCircle(10, timePos[selection], 3, ST77XX_WHITE);
+}
+
+void my_interrupt_handler()
+{
+ static unsigned long last_interrupt_time = 0;
+ unsigned long interrupt_time = millis();
+ // If interrupts come faster than 200ms, assume it's a bounce and ignore
+ if (interrupt_time - last_interrupt_time > 200)
+ {
+   IncrementSelection();
+ }
+ last_interrupt_time = interrupt_time;
 }
 
 void testlines(uint16_t color) {
