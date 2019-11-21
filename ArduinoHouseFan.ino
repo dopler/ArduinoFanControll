@@ -83,6 +83,8 @@ float p = 3.1415926;
 const int selectButton = 2;             //button select length of time
 const int fanButton = 3;                //button select which fans are on
 const int startButton = 4;              //button to start the timer and activate fans
+const int conOne = 6;                   //control pin 1 for first relay, active high
+const int conTwo = 7;                   //control pin 2 for second relay, active high
 volatile int selection;                 //variable that holds time selection
 volatile int fanSelection = 0;          //variable that holds current fan selection option
 int timeSelection[] = {8, 6, 4, 2, 1};  //the amount of time selected
@@ -130,6 +132,10 @@ void setup(void)
   pinMode(selectButton, INPUT_PULLUP);
   pinMode(fanButton, INPUT_PULLUP);
   pinMode(startButton, INPUT_PULLUP);
+  pinMode(conOne, OUTPUT);
+  digitalWrite(conOne, LOW);
+  pinMode(conTwo, OUTPUT);
+  digitalWrite(conTwo, LOW);
   attachInterrupt(digitalPinToInterrupt(selectButton), InterruptTime, FALLING);
   attachInterrupt(digitalPinToInterrupt(fanButton), InterruptFanSelection, FALLING);
   Serial.println(F("Initialized"));
@@ -210,6 +216,7 @@ void StartFanTimer()
     setTime(0,0,0,1,1,11);      // resets time to 0
     timeToggle = true;          //activates timer in main loop()
     currMin = -1;               //allows initial drawing of time (00:00)
+    ActivateRelay();
   }
 }
 
@@ -220,6 +227,7 @@ void StopTime()
   currMin = -1;                                     //reset to allow initial draw again (0:00)
   tft.fillRect(65, 130, 70, 20, ST77XX_BLACK);      //overwrite drawn timer
   drawText("START", ST77XX_GREEN, 65, 130);         //draw "Start"
+  DeactivateRelay();
   //----------------------------------- TO DO-------------------------------------------------------------------------
   //------------------------------------------------------------------------------------------------------------------
   //----------------------------DEACTIVATE RELAYS---------------------------------------------------------------------
@@ -259,7 +267,7 @@ void drawText(char * text, uint16_t color, int xPos, int yPos)
   tft.print(text);
 }
 
-//-------------------------------FAN FUNCTIONS FOR CHANGING OPTIONS AND DRAWING TO UI--------------------------------
+//-------------------------FAN FUNCTIONS FOR CHANGING OPTIONS, ACTIVATING, AND DRAWING TO UI---------------------------
 void ChangeFanStatus()
 {
   fanSelection = (fanSelection + 1) % 4;
@@ -310,6 +318,24 @@ void InterruptFanSelection()
    ChangeFanStatus();
  }
  last_interrupt_time = interrupt_time;
+}
+
+void ActivateRelay()
+{
+  if(fanSelection == 1 || fanSelection == 3)
+  {
+    digitalWrite(conOne, HIGH);
+  }
+  if(fanSelection == 2 || fanSelection == 3)
+  {
+    digitalWrite(conTwo, HIGH);
+  }
+}
+
+void DeactivateRelay()
+{
+  digitalWrite(conOne, LOW);
+  digitalWrite(conTwo, LOW);
 }
 
 //-------------------------------TIME SELECTION FUNCTIONS FOR CHANGING OPTIONS AND DRAWING TO UI--------------------------------
